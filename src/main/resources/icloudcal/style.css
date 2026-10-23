@@ -1,0 +1,282 @@
+/* Windows 11 작업 표시줄 달력과 비슷한 모양 */
+
+.window {
+    -fx-background-color: -c-bg;
+    -fx-background-radius: 8;
+    -fx-border-color: -c-border;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-font-family: "Malgun Gothic", "Segoe UI";
+    -fx-font-size: 13px;
+    -fx-font-smoothing-type: gray;
+}
+
+.window.dark {
+    -c-bg: #202020;
+    -c-header: #1a1a1a;
+    -c-fg: #ffffff;
+    -c-dim: #9d9d9d;
+    -c-border: #3b3b3b;
+    -c-hover: #2d2d2d;
+    -c-accent: #4cc2ff;
+    -c-accent-fg: #000000;
+    -c-error: #ff99a4;
+    -fx-base: #2d2d2d;
+    -fx-background: #202020;
+    -fx-control-inner-background: #2b2b2b;
+    -fx-accent: #4cc2ff;
+    -fx-focus-color: #4cc2ff;
+    -fx-faint-focus-color: transparent;
+}
+
+.window.light {
+    -c-bg: #f3f3f3;
+    -c-header: #ebebeb;
+    -c-fg: #1a1a1a;
+    -c-dim: #6b6b6b;
+    -c-border: #d5d5d5;
+    -c-hover: #e3e3e3;
+    -c-accent: #005fb8;
+    -c-accent-fg: #ffffff;
+    -c-error: #c42b1c;
+    -fx-base: #fbfbfb;
+    -fx-background: #f3f3f3;
+    -fx-control-inner-background: #ffffff;
+    -fx-accent: #005fb8;
+    -fx-focus-color: #005fb8;
+    -fx-faint-focus-color: transparent;
+}
+
+.label {
+    -fx-text-fill: -c-fg;
+}
+
+/* ---- 달력 ---- */
+
+.today-header {
+    -fx-font-size: 15px;
+    -fx-padding: 18 20 18 20;
+    -fx-background-color: -c-header;
+    -fx-background-radius: 8 8 0 0;
+    -fx-cursor: hand;
+}
+
+.month-nav {
+    -fx-padding: 14 12 6 20;
+}
+
+.month-label {
+    -fx-font-size: 15px;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 11px;
+    -fx-padding: 6 10 6 10;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+
+.nav-button:hover {
+    -fx-background-color: -c-hover;
+}
+
+.month-grid {
+    -fx-padding: 0 10 8 10;
+    -fx-vgap: 2;
+}
+
+.weekday {
+    -fx-font-size: 12px;
+    -fx-padding: 6 0 6 0;
+}
+
+.day {
+    -fx-background-radius: 20;
+    -fx-border-radius: 20;
+    -fx-cursor: hand;
+}
+
+.day:hover {
+    -fx-background-color: -c-hover;
+}
+
+.day.other-month .label {
+    -fx-text-fill: -c-dim;
+}
+
+.day.selected {
+    -fx-border-color: -c-accent;
+    -fx-border-width: 1.5;
+}
+
+.day.today {
+    -fx-background-color: -c-accent;
+}
+
+.day.today .label {
+    -fx-text-fill: -c-accent-fg;
+}
+
+.dot {
+    -fx-fill: -c-accent;
+}
+
+.day.today .dot {
+    -fx-fill: -c-accent-fg;
+}
+
+/* ---- 일정 목록 ---- */
+
+.day-bar {
+    -fx-padding: 10 14 8 20;
+    -fx-border-color: -c-border transparent transparent transparent;
+}
+
+.day-title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.event-scroll,
+.event-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.event-scroll {
+    -fx-padding: 0 10 0 12;
+}
+
+.event-scroll .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 8;
+    -fx-padding: 0;
+}
+
+.event-scroll .scroll-bar .increment-button,
+.event-scroll .scroll-bar .decrement-button {
+    -fx-padding: 0;
+    -fx-shape: "";
+}
+
+.event-scroll .scroll-bar .increment-arrow,
+.event-scroll .scroll-bar .decrement-arrow {
+    -fx-padding: 0;
+    -fx-shape: "";
+}
+
+.event-scroll .scroll-bar .track {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.event-scroll .scroll-bar .thumb {
+    -fx-background-color: -c-dim;
+    -fx-background-radius: 3;
+    -fx-background-insets: 0 2 0 2;
+    -fx-opacity: 0.5;
+}
+
+.event-scroll .scroll-bar .thumb:hover {
+    -fx-opacity: 0.8;
+}
+
+.event-row {
+    -fx-padding: 7 8 7 8;
+    -fx-background-radius: 6;
+}
+
+.event-row:hover {
+    -fx-background-color: -c-hover;
+}
+
+.event-bar {
+    -fx-background-radius: 2;
+}
+
+.event-title {
+    -fx-font-size: 13px;
+}
+
+.event-time,
+.hint,
+.empty {
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 12px;
+}
+
+.empty {
+    -fx-padding: 8;
+}
+
+.status {
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 11px;
+    -fx-padding: 4 20 10 20;
+}
+
+/* ---- 입력 화면 ---- */
+
+.form-pane {
+    -fx-padding: 20;
+    -fx-spacing: 10;
+}
+
+.form-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.form-grid {
+    -fx-hgap: 10;
+    -fx-vgap: 8;
+}
+
+.field-label {
+    -fx-text-fill: -c-dim;
+}
+
+.error {
+    -fx-text-fill: -c-error;
+    -fx-font-size: 12px;
+}
+
+.accent-button {
+    -fx-background-color: -c-accent;
+    -fx-text-fill: -c-accent-fg;
+    -fx-background-radius: 4;
+    -fx-padding: 5 14 5 14;
+    -fx-cursor: hand;
+}
+
+.accent-button:hover {
+    -fx-opacity: 0.9;
+}
+
+.plain-button {
+    -fx-background-color: -c-hover;
+    -fx-text-fill: -c-fg;
+    -fx-background-radius: 4;
+    -fx-padding: 5 14 5 14;
+    -fx-cursor: hand;
+}
+
+.hyperlink {
+    -fx-text-fill: -c-accent;
+    -fx-padding: 0;
+    -fx-border-width: 0;
+}
+
+.text-field,
+.password-field,
+.combo-box,
+.date-picker {
+    -fx-background-radius: 4;
+    -fx-prompt-text-fill: -c-dim;
+}
+
+.check-box {
+    -fx-text-fill: -c-fg;
+}
