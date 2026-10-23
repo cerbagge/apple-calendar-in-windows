@@ -1,10 +1,12 @@
 package icloudcal;
 
+import javafx.event.EventHandler;
 import javafx.geometry.HPos;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -31,6 +33,8 @@ final class CalendarPane extends VBox {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("M/d a h:mm", KO);
     private static final String[] WEEKDAYS = {"일", "월", "화", "수", "목", "금", "토"};
     private static final String DEFAULT_COLOR = "#4cc2ff";
+    /** 마우스 휠 한 칸의 deltaY. 터치패드는 작은 값이 여러 번 오므로 이만큼 모이면 한 달 넘긴다. */
+    private static final double WHEEL_STEP = 40;
 
     private final Consumer<YearMonth> onMonthChange;
     private final Label today = new Label();
@@ -43,6 +47,7 @@ final class CalendarPane extends VBox {
     private YearMonth month = YearMonth.now();
     private LocalDate selected = LocalDate.now();
     private List<EventItem> events = List.of();
+    private double wheelDelta;
 
     CalendarPane(Consumer<YearMonth> onMonthChange, Consumer<LocalDate> onAdd) {
         this.onMonthChange = onMonthChange;
@@ -64,6 +69,18 @@ final class CalendarPane extends VBox {
             grid.getColumnConstraints().add(column);
         }
         grid.getStyleClass().add("month-grid");
+
+        // 달력 위에서 휠을 굴리면 달을 넘긴다 (위: 이전 달, 아래: 다음 달)
+        EventHandler<ScrollEvent> wheel = e -> {
+            wheelDelta += e.getDeltaY();
+            if (Math.abs(wheelDelta) >= WHEEL_STEP) {
+                changeMonth(month.plusMonths(wheelDelta > 0 ? -1 : 1));
+                wheelDelta = 0;
+            }
+            e.consume();
+        };
+        nav.setOnScroll(wheel);
+        grid.setOnScroll(wheel);
 
         dayTitle.getStyleClass().add("day-title");
         Button add = new Button("+ 일정 추가");

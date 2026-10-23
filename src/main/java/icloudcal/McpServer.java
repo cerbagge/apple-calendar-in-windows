@@ -20,7 +20,7 @@ import java.time.ZoneId;
  */
 public final class McpServer {
     static final String PROTOCOL_VERSION = "2025-06-18";
-    static final String VERSION = "2.0.0";
+    static final String VERSION = "2.1.0";
 
     private final ObjectMapper json = new ObjectMapper();
     private final CalendarTools tools;
