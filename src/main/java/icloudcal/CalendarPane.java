@@ -1,5 +1,6 @@
 package icloudcal;
 
+import javafx.animation.Animation;
 import javafx.event.EventHandler;
 import javafx.geometry.HPos;
 import javafx.geometry.Pos;
@@ -12,8 +13,10 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Rectangle;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -32,13 +35,18 @@ final class CalendarPane extends VBox {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("a h:mm", KO);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("M/d a h:mm", KO);
     private static final String[] WEEKDAYS = {"일", "월", "화", "수", "목", "금", "토"};
-    private static final String DEFAULT_COLOR = "#4cc2ff";
+    static final String DEFAULT_COLOR = "#4cc2ff";
     /** 마우스 휠 한 칸의 deltaY. 터치패드는 작은 값이 여러 번 오므로 이만큼 모이면 한 달 넘긴다. */
     private static final double WHEEL_STEP = 40;
+    /** 달을 넘길 때 날짜 칸이 미끄러져 들어오는 거리와 시간 */
+    private static final double MONTH_SLIDE = 36;
+    private static final double MONTH_MILLIS = 260;
 
     private final Consumer<YearMonth> onMonthChange;
+    private final Consumer<EventItem> onEdit;
     private final Label today = new Label();
     private final Label monthLabel = new Label();
+    private final GridPane weekdays = new GridPane();
     private final GridPane grid = new GridPane();
     private final Label dayTitle = new Label();
     private final VBox eventList = new VBox(2);
@@ -48,9 +56,11 @@ final class CalendarPane extends VBox {
     private LocalDate selected = LocalDate.now();
     private List<EventItem> events = List.of();
     private double wheelDelta;
+    private Animation monthAnimation;
 
-    CalendarPane(Consumer<YearMonth> onMonthChange, Consumer<LocalDate> onAdd) {
+    CalendarPane(Consumer<YearMonth> onMonthChange, Consumer<LocalDate> onAdd, Consumer<EventItem> onEdit) {
         this.onMonthChange = onMonthChange;
+        this.onEdit = onEdit;
         getStyleClass().add("calendar-pane");
 
         today.getStyleClass().add("today-header");
@@ -63,12 +73,21 @@ final class CalendarPane extends VBox {
         nav.getStyleClass().add("month-nav");
 
         for (int i = 0; i < 7; i++) {
-            ColumnConstraints column = new ColumnConstraints();
-            column.setPercentWidth(100.0 / 7);
-            column.setHalignment(HPos.CENTER);
-            grid.getColumnConstraints().add(column);
+            weekdays.getColumnConstraints().add(column());
+            grid.getColumnConstraints().add(column());
+            Label weekday = new Label(WEEKDAYS[i]);
+            weekday.getStyleClass().add("weekday");
+            weekdays.add(weekday, i, 0);
         }
+        weekdays.getStyleClass().add("weekday-row");
         grid.getStyleClass().add("month-grid");
+
+        // 달을 넘길 때 날짜 칸만 미끄러지도록, 요일 줄 아래를 잘라 낸 상자에 넣는다
+        StackPane gridBox = new StackPane(grid);
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(gridBox.widthProperty());
+        clip.heightProperty().bind(gridBox.heightProperty());
+        gridBox.setClip(clip);
 
         // 달력 위에서 휠을 굴리면 달을 넘긴다 (위: 이전 달, 아래: 다음 달)
         EventHandler<ScrollEvent> wheel = e -> {
@@ -80,7 +99,8 @@ final class CalendarPane extends VBox {
             e.consume();
         };
         nav.setOnScroll(wheel);
-        grid.setOnScroll(wheel);
+        weekdays.setOnScroll(wheel);
+        gridBox.setOnScroll(wheel);
 
         dayTitle.getStyleClass().add("day-title");
         Button add = new Button("+ 일정 추가");
@@ -99,7 +119,7 @@ final class CalendarPane extends VBox {
         status.getStyleClass().add("status");
         status.setMaxWidth(Double.MAX_VALUE);
 
-        getChildren().addAll(today, nav, grid, dayBar, scroll, status);
+        getChildren().addAll(today, nav, weekdays, gridBox, dayBar, scroll, status);
         render();
     }
 
@@ -143,19 +163,20 @@ final class CalendarPane extends VBox {
     }
 
     private void changeMonth(YearMonth target) {
+        // 다음 달은 아래에서, 이전 달은 위에서 들어온다
+        double fromY = target.isAfter(month) ? MONTH_SLIDE : -MONTH_SLIDE;
         month = target;
         events = List.of();
         render();
+        if (monthAnimation != null) {
+            monthAnimation.stop();
+        }
+        monthAnimation = Motion.enter(grid, fromY, MONTH_MILLIS);
         onMonthChange.accept(target);
     }
 
     private void renderGrid() {
         grid.getChildren().clear();
-        for (int i = 0; i < 7; i++) {
-            Label weekday = new Label(WEEKDAYS[i]);
-            weekday.getStyleClass().add("weekday");
-            grid.add(weekday, i, 0);
-        }
         LocalDate start = gridStart(month);
         LocalDate now = LocalDate.now();
         for (int i = 0; i < 42; i++) {
@@ -181,7 +202,7 @@ final class CalendarPane extends VBox {
                 cell.getStyleClass().add("selected");
             }
             cell.setOnMouseClicked(e -> select(day));
-            grid.add(cell, i % 7, 1 + i / 7);
+            grid.add(cell, i % 7, i / 7);
         }
     }
 
@@ -216,14 +237,23 @@ final class CalendarPane extends VBox {
         Label time = new Label(timeText(event) + "  ·  " + event.calendar().name());
         time.getStyleClass().add("event-time");
         VBox text = new VBox(2, title, time);
+        text.setMinWidth(0);
+        HBox.setHgrow(text, Priority.ALWAYS);
         if (event.location() != null && !event.location().isBlank()) {
             Label location = new Label(event.location());
             location.getStyleClass().add("event-time");
             text.getChildren().add(location);
         }
+        if (event.notes() != null && !event.notes().isBlank()) {
+            // 메모는 첫 줄만 보여 주고, 전체는 눌러서 연 수정 화면에서 본다
+            Label notes = new Label(event.notes().strip().lines().findFirst().orElse(""));
+            notes.getStyleClass().add("event-notes");
+            text.getChildren().add(notes);
+        }
 
         HBox row = new HBox(10, bar, text);
         row.getStyleClass().add("event-row");
+        row.setOnMouseClicked(e -> onEdit.accept(event));
         return row;
     }
 
@@ -242,6 +272,13 @@ final class CalendarPane extends VBox {
         button.getStyleClass().add("nav-button");
         button.setOnAction(e -> changeMonth(month.plusMonths(delta)));
         return button;
+    }
+
+    private static ColumnConstraints column() {
+        ColumnConstraints column = new ColumnConstraints();
+        column.setPercentWidth(100.0 / 7);
+        column.setHalignment(HPos.CENTER);
+        return column;
     }
 
     private static Region spacer() {

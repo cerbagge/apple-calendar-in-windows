@@ -83,8 +83,10 @@ class CalDavClientTest {
                   </response>
                 </multistatus>
                 """;
-        List<String> data = CalDavClient.calendarData(CalDavClient.parseXml(xml.getBytes(StandardCharsets.UTF_8)));
+        List<CalDavClient.Resource> data =
+                CalDavClient.calendarData(CalDavClient.parseXml(xml.getBytes(StandardCharsets.UTF_8)));
         assertEquals(1, data.size());
-        assertTrue(data.get(0).startsWith("BEGIN:VCALENDAR"));
+        assertEquals("/123456/calendars/home/a.ics", data.get(0).href());
+        assertTrue(data.get(0).ics().startsWith("BEGIN:VCALENDAR"));
     }
 }

@@ -7,7 +7,7 @@ plugins {
 layout.buildDirectory.set(File(System.getenv("LOCALAPPDATA"), "iCloudCalendar/build"))
 
 group = "icloudcal"
-version = "2.1.0"
+version = "3.1.0"
 
 repositories {
     mavenCentral()

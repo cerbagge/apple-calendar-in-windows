@@ -1,16 +1,20 @@
 package icloudcal;
 
+import javafx.animation.Animation;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.geometry.Point2D;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.input.InputMethodRequests;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import javafx.stage.WindowEvent;
 
 import java.awt.AWTException;
 import java.awt.BasicStroke;
@@ -35,8 +39,10 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,12 +50,20 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /** 트레이에 상주하다가 클릭하거나 Win + Alt + C 를 누르면 시계 위에 달력 창을 띄운다. */
 public final class App extends Application {
     private static final double WIDTH = 360;
     private static final double HEIGHT = 620;
     private static final double MARGIN = 12;
+    /** 창이 작업 표시줄 쪽에서 올라오는 거리와 시간 */
+    private static final double OPEN_SLIDE = 28;
+    private static final double OPEN_MILLIS = 280;
+    private static final double CLOSE_MILLIS = 120;
+    /** 달력 ↔ 입력 화면 전환 */
+    private static final double PANE_SLIDE = 14;
+    private static final double PANE_MILLIS = 220;
 
     @FunctionalInterface
     private interface IoTask<T> {
@@ -62,6 +76,10 @@ public final class App extends Application {
         return thread;
     });
     private final Map<YearMonth, List<EventItem>> cache = new ConcurrentHashMap<>();
+    /** 지금 받아 오는 중인 달 (JavaFX 스레드에서만 쓴다) */
+    private final Set<YearMonth> loading = new HashSet<>();
+    /** 캐시를 비울 때마다 늘려서, 비우기 전에 보낸 요청의 결과를 버린다 */
+    private int cacheGeneration;
 
     private Stage popup;
     private StackPane root;
@@ -71,6 +89,8 @@ public final class App extends Application {
     private CalDavClient client;
     private List<CalendarInfo> calendars = List.of();
     private long lastHiddenAt;
+    private Animation windowAnimation;
+    private boolean closing;
 
     @Override
     public void start(Stage owner) {
@@ -101,6 +121,8 @@ public final class App extends Application {
             }
         });
         popup.setScene(scene);
+        popup.addEventHandler(WindowEvent.WINDOW_SHOWN, e ->
+                WindowsApi.fixImeComposition(popup.getTitle(), this::caretPoint));
         // 계정 입력·일정 추가 중에는 다른 창(브라우저 등)을 봐야 할 수 있으므로 달력 화면일 때만 자동으로 닫는다
         popup.focusedProperty().addListener((obs, was, focused) -> {
             if (!focused && root.getChildren().contains(calendarPane)) {
@@ -108,7 +130,7 @@ public final class App extends Application {
             }
         });
 
-        calendarPane = new CalendarPane(this::loadMonth, this::openAddForm);
+        calendarPane = new CalendarPane(this::loadMonth, this::openAddForm, this::openEditForm);
         installTray();
         if (!WindowsApi.registerHotkey('C', () -> Platform.runLater(this::toggle))) {
             calendarPane.setStatus("Win + Alt + C 단축키를 다른 프로그램이 쓰고 있습니다.");
@@ -148,7 +170,7 @@ public final class App extends Application {
     // ---- 창 ----
 
     private void toggle() {
-        if (popup.isShowing()) {
+        if (popup.isShowing() && !closing) {
             hide();
         } else if (System.currentTimeMillis() - lastHiddenAt > 300) {
             // 트레이 아이콘을 누르는 순간 포커스를 잃고 닫힌 경우에는 다시 열지 않는다
@@ -161,20 +183,53 @@ public final class App extends Application {
         popup.setX(area.getMaxX() - WIDTH - MARGIN);
         popup.setY(area.getMaxY() - HEIGHT - MARGIN);
         calendarPane.render();
+        closing = false;
+        if (windowAnimation != null) {
+            windowAnimation.stop();
+        }
+        // Windows 11 달력처럼 작업 표시줄 쪽에서 미끄러져 올라온다
+        root.setOpacity(0);
         popup.show();
         popup.toFront();
         popup.requestFocus();
+        windowAnimation = Motion.enter(root, OPEN_SLIDE, OPEN_MILLIS);
     }
 
     private void hide() {
-        if (popup.isShowing()) {
+        if (!popup.isShowing() || closing) {
+            return;
+        }
+        closing = true;
+        lastHiddenAt = System.currentTimeMillis();
+        if (windowAnimation != null) {
+            windowAnimation.stop();
+        }
+        windowAnimation = Motion.exit(root, OPEN_SLIDE / 2, CLOSE_MILLIS);
+        windowAnimation.setOnFinished(e -> {
+            closing = false;
             popup.hide();
             lastHiddenAt = System.currentTimeMillis();
-        }
+        });
     }
 
     private void showPane(Node pane) {
         root.getChildren().setAll(pane);
+        if (popup.isShowing()) {
+            Motion.enter(pane, PANE_SLIDE, PANE_MILLIS);
+        }
+    }
+
+    /** 입력 중인 칸의 커서 위치를 창 안 물리 픽셀 좌표로 돌려준다. 입력 칸이 아니면 null. */
+    private int[] caretPoint() {
+        Node focused = popup.getScene().getFocusOwner();
+        InputMethodRequests requests = focused == null ? null : focused.getInputMethodRequests();
+        Point2D caret = requests == null ? null : requests.getTextLocation(0);
+        if (caret == null) {
+            return null;
+        }
+        return new int[]{
+                (int) Math.round((caret.getX() - popup.getX()) * popup.getOutputScaleX()),
+                (int) Math.round((caret.getY() - popup.getY()) * popup.getOutputScaleY())};
     }
 
     private void showLogin(String message) {
@@ -197,7 +252,7 @@ public final class App extends Application {
         }).thenAcceptAsync(list -> {
             client = candidate;
             calendars = list;
-            cache.clear();
+            clearCache();
             calendarPane.setStatus("");
             showPane(calendarPane);
             loadMonth(calendarPane.month());
@@ -213,20 +268,31 @@ public final class App extends Application {
         }
     }
 
+    /** month 를 보여 주고, 앞뒤 한 달도 미리 받아 둔다. 이미 받았거나 받는 중인 달은 건너뛴다. */
     private void loadMonth(YearMonth month) {
         List<EventItem> cached = cache.get(month);
         if (cached != null) {
             calendarPane.setEvents(month, cached);
-            return;
         }
         if (client == null) {
             return;
         }
+        List<YearMonth> missing = Stream.of(month.minusMonths(1), month, month.plusMonths(1))
+                .filter(m -> !cache.containsKey(m) && !loading.contains(m))
+                .toList();
+        if (missing.isEmpty()) {
+            return;
+        }
+        loading.addAll(missing);
         CalDavClient current = client;
         List<CalendarInfo> targets = calendars;
-        ZonedDateTime from = CalendarPane.gridStart(month).atStartOfDay(ZoneId.systemDefault());
-        ZonedDateTime to = from.plusDays(42);
-        calendarPane.setStatus("불러오는 중…");
+        int generation = cacheGeneration;
+        // 빠진 달들의 6주 달력을 모두 덮는 구간을 한 번에 받는다
+        ZonedDateTime from = gridFrom(missing.get(0));
+        ZonedDateTime to = gridFrom(missing.get(missing.size() - 1)).plusDays(42);
+        if (cached == null) {
+            calendarPane.setStatus("불러오는 중…");
+        }
         async(() -> {
             List<EventItem> all = new ArrayList<>();
             for (CalendarInfo calendar : targets) {
@@ -235,34 +301,82 @@ public final class App extends Application {
             all.sort(Comparator.comparing(EventItem::start));
             return all;
         }).whenCompleteAsync((list, ex) -> {
-            if (ex != null) {
-                calendarPane.setStatus("불러오기 실패: " + message(ex));
+            if (generation != cacheGeneration) {
                 return;
             }
-            cache.put(month, list);
-            calendarPane.setEvents(month, list);
-            calendarPane.setStatus("");
+            missing.forEach(loading::remove);
+            if (ex != null) {
+                if (missing.contains(calendarPane.month())) {
+                    calendarPane.setStatus("불러오기 실패: " + message(ex));
+                }
+                return;
+            }
+            for (YearMonth m : missing) {
+                ZonedDateTime start = gridFrom(m);
+                ZonedDateTime end = start.plusDays(42);
+                List<EventItem> part = list.stream()
+                        .filter(e -> e.start().isBefore(end) && (e.end().isAfter(start) || !e.start().isBefore(start)))
+                        .toList();
+                cache.put(m, part);
+                calendarPane.setEvents(m, part);
+            }
+            if (cache.containsKey(calendarPane.month())) {
+                calendarPane.setStatus("");
+            }
         }, Platform::runLater);
     }
 
+    private static ZonedDateTime gridFrom(YearMonth month) {
+        return CalendarPane.gridStart(month).atStartOfDay(ZoneId.systemDefault());
+    }
+
+    private void clearCache() {
+        cache.clear();
+        loading.clear();
+        cacheGeneration++;
+    }
+
     private void openAddForm(LocalDate date) {
-        List<CalendarInfo> writable = calendars.stream().filter(CalendarInfo::writable).toList();
+        List<CalendarInfo> writable = writableCalendars();
         if (writable.isEmpty()) {
             calendarPane.setStatus("일정을 추가할 수 있는 캘린더가 없습니다.");
             return;
         }
-        showPane(new AddEventPane(writable, date, this::saveEvent, () -> showPane(calendarPane)));
-    }
-
-    private CompletableFuture<Void> saveEvent(NewEvent event) {
         CalDavClient current = client;
-        return async(() -> {
+        showPane(new EventFormPane(writable, date, null, event -> saveEvent(() -> {
             current.putEvent(event);
             return null;
-        }).thenRunAsync(() -> {
-            cache.clear();
+        }, event.start().toLocalDate()), null, () -> showPane(calendarPane)));
+    }
+
+    private void openEditForm(EventItem original) {
+        if (original.source() == null || !original.calendar().writable()) {
+            calendarPane.setStatus("'" + original.calendar().name() + "' 캘린더의 일정은 수정할 수 없습니다.");
+            return;
+        }
+        CalDavClient current = client;
+        showPane(new EventFormPane(writableCalendars(), original.start().toLocalDate(), original,
+                event -> saveEvent(() -> {
+                    current.updateEvent(original, event);
+                    return null;
+                }, event.start().toLocalDate()),
+                wholeSeries -> saveEvent(() -> {
+                    current.deleteEvent(original, wholeSeries);
+                    return null;
+                }, original.start().toLocalDate()),
+                () -> showPane(calendarPane)));
+    }
+
+    private List<CalendarInfo> writableCalendars() {
+        return calendars.stream().filter(CalendarInfo::writable).toList();
+    }
+
+    /** 서버에 올리거나 지운 뒤 달력으로 돌아가 day 를 고르고 다시 불러온다. */
+    private CompletableFuture<Void> saveEvent(IoTask<Void> upload, LocalDate day) {
+        return async(upload).thenRunAsync(() -> {
+            clearCache();
             showPane(calendarPane);
-            calendarPane.select(event.start().toLocalDate());
+            calendarPane.select(day);
             loadMonth(calendarPane.month());
         }, Platform::runLater);
     }
@@ -278,7 +392,7 @@ public final class App extends Application {
                     }, Platform::runLater));
             return;
         }
-        cache.clear();
+        clearCache();
         calendarPane.render();
         loadMonth(calendarPane.month());
     }
@@ -291,7 +405,7 @@ public final class App extends Application {
         }
         client = null;
         calendars = List.of();
-        cache.clear();
+        clearCache();
         showLogin(null);
         show();
     }

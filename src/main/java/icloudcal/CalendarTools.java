@@ -173,7 +173,7 @@ final class CalendarTools {
                     new IllegalArgumentException("일정을 추가할 수 있는 캘린더가 없습니다."));
         }
 
-        backend().putEvent(new NewEvent(calendar, title, location, allDay, start, end, alert));
+        backend().putEvent(new NewEvent(calendar, title, location, null, allDay, start, end, alert));
         String when = allDay
                 ? start.toLocalDate() + (end.equals(start) ? "" : " ~ " + end.toLocalDate()) + " 하루 종일"
                 : start.format(MINUTES) + " ~ " + end.format(MINUTES);

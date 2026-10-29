@@ -130,10 +130,10 @@ class McpServerTest {
 
     @Test
     void listEventsUsesInclusiveEndDateAndCalendarFilter() throws Exception {
-        backend.events.add(new EventItem("강의", "6206", ZonedDateTime.of(2026, 10, 27, 10, 0, 0, 0, SEOUL),
-                ZonedDateTime.of(2026, 10, 27, 11, 50, 0, 0, SEOUL), false, SCHOOL));
-        backend.events.add(new EventItem("휴가", null, ZonedDateTime.of(2026, 10, 28, 0, 0, 0, 0, SEOUL),
-                ZonedDateTime.of(2026, 10, 30, 0, 0, 0, 0, SEOUL), true, HOME));
+        backend.events.add(new EventItem("강의", "6206", null, ZonedDateTime.of(2026, 10, 27, 10, 0, 0, 0, SEOUL),
+                ZonedDateTime.of(2026, 10, 27, 11, 50, 0, 0, SEOUL), false, null, SCHOOL, null));
+        backend.events.add(new EventItem("휴가", null, null, ZonedDateTime.of(2026, 10, 28, 0, 0, 0, 0, SEOUL),
+                ZonedDateTime.of(2026, 10, 30, 0, 0, 0, 0, SEOUL), true, null, HOME, null));
 
         JsonNode all = json.readTree(call("list_events", "{\"start\":\"2026-10-27\",\"end\":\"2026-10-28\"}")
                 .path("content").get(0).path("text").asText());

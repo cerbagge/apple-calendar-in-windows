@@ -20,6 +20,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +33,10 @@ final class CalDavClient implements CalendarBackend {
 
     private static final URI ROOT = URI.create("https://caldav.icloud.com/");
     private static final DateTimeFormatter UTC_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
+
+    /** REPORT 응답에 담긴 .ics 파일 하나. href 는 서버가 준 그대로(보통 절대 경로)이다. */
+    record Resource(String href, String ics) {
+    }
 
     /** Apple ID 또는 앱 암호가 틀렸을 때 */
     static final class AuthException extends IOException {
@@ -85,8 +90,9 @@ final class CalDavClient implements CalendarBackend {
                 "Depth", "1", "Content-Type", "application/xml; charset=utf-8"));
         expect(res, 207);
         List<EventItem> events = new ArrayList<>();
-        for (String ics : calendarData(parseXml(res.body()))) {
-            events.addAll(IcsCodec.expand(ics, calendar, from, to));
+        for (Resource resource : calendarData(parseXml(res.body()))) {
+            URI href = calendar.url().resolve(resource.href());
+            events.addAll(IcsCodec.expand(resource.ics(), calendar, href, from, to));
         }
         return events;
     }
@@ -98,6 +104,39 @@ final class CalDavClient implements CalendarBackend {
         HttpResponse<byte[]> res = send("PUT", target, IcsCodec.build(uid, event), Map.of(
                 "Content-Type", "text/calendar; charset=utf-8", "If-None-Match", "*"));
         expect(res, 201, 204);
+    }
+
+    /** 서버의 최신 내용을 받아 original 회차를 changes 대로 고쳐 올린다. 그사이 다른 기기에서 바뀌었으면 실패한다. */
+    void updateEvent(EventItem original, NewEvent changes) throws IOException {
+        URI href = original.source().href();
+        HttpResponse<byte[]> current = send("GET", href, "", Map.of());
+        expect(current, 200);
+        String ics = IcsCodec.update(new String(current.body(), StandardCharsets.UTF_8), original, changes);
+        Map<String, String> headers = new HashMap<>(Map.of("Content-Type", "text/calendar; charset=utf-8"));
+        current.headers().firstValue("ETag").ifPresent(etag -> headers.put("If-Match", etag));
+        expect(send("PUT", href, ics, headers), 200, 201, 204);
+    }
+
+    /**
+     * 일정을 지운다. 반복 일정의 회차이고 wholeSeries 가 false 면 그 회차만 빼고 나머지 반복은 남긴다.
+     * 그 밖에는 .ics 파일째 지운다.
+     */
+    void deleteEvent(EventItem item, boolean wholeSeries) throws IOException {
+        URI href = item.source().href();
+        boolean partOfSeries = item.source().series() || item.source().recurrenceId() != null;
+        if (partOfSeries && !wholeSeries) {
+            HttpResponse<byte[]> current = send("GET", href, "", Map.of());
+            expect(current, 200);
+            String ics = IcsCodec.removeOccurrence(new String(current.body(), StandardCharsets.UTF_8), item);
+            if (ics != null) {
+                Map<String, String> headers = new HashMap<>(Map.of("Content-Type", "text/calendar; charset=utf-8"));
+                current.headers().firstValue("ETag").ifPresent(etag -> headers.put("If-Match", etag));
+                expect(send("PUT", href, ics, headers), 200, 201, 204);
+                return;
+            }
+        }
+        // 이미 지워져 있으면(404) 원하는 결과와 같으므로 성공으로 본다
+        expect(send("DELETE", href, "", Map.of()), 200, 204, 404);
     }
 
     private URI discoverHome() throws IOException {
@@ -196,12 +235,12 @@ final class CalDavClient implements CalendarBackend {
         return calendars;
     }
 
-    static List<String> calendarData(Document doc) {
-        List<String> data = new ArrayList<>();
-        for (Element element : elements(doc.getDocumentElement(), CALDAV, "calendar-data")) {
-            String ics = element.getTextContent();
-            if (ics != null && !ics.isBlank()) {
-                data.add(ics);
+    static List<Resource> calendarData(Document doc) {
+        List<Resource> data = new ArrayList<>();
+        for (Element response : elements(doc.getDocumentElement(), DAV, "response")) {
+            String ics = text(first(response, CALDAV, "calendar-data"));
+            if (!ics.isEmpty()) {
+                data.add(new Resource(text(first(response, DAV, "href")), ics));
             }
         }
         return data;

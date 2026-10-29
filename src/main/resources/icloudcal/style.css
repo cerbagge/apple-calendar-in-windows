@@ -21,6 +21,14 @@
     -c-accent: #4cc2ff;
     -c-accent-fg: #000000;
     -c-error: #ff99a4;
+    -c-card: #2b2b2b;
+    -c-field: #383838;
+    -c-field-hover: #424242;
+    -c-divider: #353535;
+    -c-switch-off: #5c5c5c;
+    -c-danger: #c42b1c;
+    -c-danger-text: #ff99a4;
+    -c-scrim: rgba(0, 0, 0, 0.55);
     -fx-base: #2d2d2d;
     -fx-background: #202020;
     -fx-control-inner-background: #2b2b2b;
@@ -39,6 +47,14 @@
     -c-accent: #005fb8;
     -c-accent-fg: #ffffff;
     -c-error: #c42b1c;
+    -c-card: #ffffff;
+    -c-field: #f0f0f0;
+    -c-field-hover: #e6e6e6;
+    -c-divider: #e8e8e8;
+    -c-switch-off: #c4c4c4;
+    -c-danger: #c42b1c;
+    -c-danger-text: #c42b1c;
+    -c-scrim: rgba(0, 0, 0, 0.3);
     -fx-base: #fbfbfb;
     -fx-background: #f3f3f3;
     -fx-control-inner-background: #ffffff;
@@ -80,6 +96,10 @@
 
 .nav-button:hover {
     -fx-background-color: -c-hover;
+}
+
+.weekday-row {
+    -fx-padding: 0 10 0 10;
 }
 
 .month-grid {
@@ -186,6 +206,7 @@
 .event-row {
     -fx-padding: 7 8 7 8;
     -fx-background-radius: 6;
+    -fx-cursor: hand;
 }
 
 .event-row:hover {
@@ -201,6 +222,7 @@
 }
 
 .event-time,
+.event-notes,
 .hint,
 .empty {
     -fx-text-fill: -c-dim;
@@ -229,13 +251,181 @@
     -fx-font-weight: bold;
 }
 
-.form-grid {
-    -fx-hgap: 10;
-    -fx-vgap: 8;
+/* 일정 입력 화면: 머리말, 둥근 상자(card) 묶음, 아래 버튼 줄 */
+
+.form-header {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-padding: 18 20 18 20;
+    -fx-background-color: -c-header;
+    -fx-background-radius: 8 8 0 0;
+}
+
+.form-body {
+    -fx-padding: 12 4 12 2;
+}
+
+.form-card {
+    -fx-background-color: -c-card;
+    -fx-background-radius: 8;
+}
+
+.card-row {
+    -fx-padding: 7 10 7 14;
+    -fx-min-height: 44;
+}
+
+.card-divider {
+    -fx-background-color: -c-divider;
+    -fx-min-height: 1;
+    -fx-pref-height: 1;
+    -fx-max-height: 1;
 }
 
 .field-label {
     -fx-text-fill: -c-dim;
+}
+
+/* 상자 안의 입력란은 테두리 없이 상자에 녹인다 */
+.form-card .text-field,
+.form-card .text-area,
+.form-card .text-area .content,
+.form-card .text-area .scroll-pane,
+.form-card .text-area .viewport {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-text-fill: -c-fg;
+    -fx-prompt-text-fill: -c-dim;
+    -fx-highlight-fill: -c-accent;
+    -fx-highlight-text-fill: -c-accent-fg;
+}
+
+.form-card .text-field {
+    -fx-padding: 12 14 12 14;
+}
+
+.form-card .title-field {
+    -fx-font-size: 15px;
+}
+
+.form-card .text-area .content {
+    -fx-padding: 10 12 10 12;
+}
+
+/* 날짜·시간·목록 선택은 회색 알약 모양 */
+.form-card .combo-box-base {
+    -fx-background-color: -c-field;
+    -fx-background-insets: 0;
+    -fx-background-radius: 6;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+}
+
+.form-card .combo-box-base:hover {
+    -fx-background-color: -c-field-hover;
+}
+
+.form-card .combo-box-base:focused {
+    -fx-background-color: -c-accent, -c-field;
+    -fx-background-insets: 0, 1.5;
+}
+
+.form-card .combo-box-base:disabled {
+    -fx-opacity: 0.55;
+}
+
+.form-card .combo-box .list-cell,
+.form-card .date-picker > .text-field {
+    -fx-text-fill: -c-fg;
+    -fx-background-color: transparent;
+    -fx-padding: 6 4 6 10;
+    -fx-cursor: hand;
+}
+
+.form-card .combo-box-base > .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 10 0 2;
+}
+
+.form-card .combo-box-base > .arrow-button > .arrow {
+    -fx-background-color: -c-dim;
+    -fx-padding: 2.5 4 2.5 4;
+}
+
+/* 날짜와 시간은 화살표 없이 글자만 가운데 둔다 */
+.form-card .date-picker > .arrow-button,
+.form-card .time-box > .arrow-button {
+    -fx-padding: 0;
+}
+
+.form-card .date-picker > .arrow-button > .arrow,
+.form-card .time-box > .arrow-button > .arrow {
+    -fx-padding: 0;
+    -fx-shape: null;
+}
+
+.form-card .date-picker > .text-field,
+.form-card .time-box .list-cell {
+    -fx-alignment: center;
+    -fx-padding: 6 10 6 10;
+}
+
+.combo-box-popup > .list-view {
+    -fx-background-color: -c-card;
+    -fx-background-radius: 6;
+    -fx-border-color: -c-border;
+    -fx-border-radius: 6;
+}
+
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -c-fg;
+    -fx-padding: 6 12 6 12;
+}
+
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:hover {
+    -fx-background-color: -c-hover;
+}
+
+.combo-box-popup > .list-view > .virtual-flow > .clipped-container > .sheet > .list-cell:selected {
+    -fx-background-color: -c-accent;
+    -fx-text-fill: -c-accent-fg;
+}
+
+/* 하루 종일: 체크 상자를 켜고 끄는 스위치 모양으로 */
+.switch {
+    -fx-label-padding: 0;
+    -fx-padding: 0;
+    -fx-cursor: hand;
+}
+
+.switch > .box {
+    -fx-background-color: -c-switch-off;
+    -fx-background-insets: 0;
+    -fx-background-radius: 11;
+    -fx-border-width: 0;
+    -fx-padding: 4 22 4 4;
+}
+
+.switch:selected > .box {
+    -fx-background-color: -c-accent;
+    -fx-padding: 4 4 4 22;
+}
+
+.switch > .box > .mark {
+    -fx-shape: "M0,7 A7,7 0 1,1 14,7 A7,7 0 1,1 0,7 Z";
+    -fx-background-color: #ffffff;
+    -fx-background-insets: 0;
+    -fx-padding: 7;
+}
+
+.switch:selected > .box > .mark {
+    -fx-background-color: -c-accent-fg;
+}
+
+.form-footer {
+    -fx-padding: 12 16 14 16;
+    -fx-border-color: -c-border transparent transparent transparent;
 }
 
 .error {
@@ -261,6 +451,60 @@
     -fx-background-radius: 4;
     -fx-padding: 5 14 5 14;
     -fx-cursor: hand;
+}
+
+/* ---- 삭제 ---- */
+
+.danger-button {
+    -fx-background-color: -c-danger;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 4;
+    -fx-padding: 5 14 5 14;
+    -fx-cursor: hand;
+}
+
+.danger-button:hover {
+    -fx-opacity: 0.9;
+}
+
+/* 입력 화면 아래 줄의 삭제: 눈에 덜 띄게 글자만 빨갛게 */
+.danger-text-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -c-danger-text;
+    -fx-background-radius: 4;
+    -fx-padding: 5 10 5 10;
+    -fx-cursor: hand;
+}
+
+.danger-text-button:hover {
+    -fx-background-color: -c-hover;
+}
+
+/* 확인 팝업: 창 전체를 어둡게 덮고 가운데에 카드 */
+.dialog-scrim {
+    -fx-background-color: -c-scrim;
+    -fx-background-radius: 8;
+    -fx-padding: 20;
+}
+
+.dialog {
+    -fx-background-color: -c-card;
+    -fx-background-radius: 10;
+    -fx-border-color: -c-border;
+    -fx-border-radius: 10;
+    -fx-padding: 20 18 16 18;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 24, 0, 0, 6);
+}
+
+.dialog-title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.dialog-message {
+    -fx-text-fill: -c-dim;
+    -fx-line-spacing: 2;
+    -fx-padding: 0 0 6 0;
 }
 
 .hyperlink {
