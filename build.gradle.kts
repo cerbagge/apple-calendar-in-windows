@@ -7,7 +7,7 @@ plugins {
 layout.buildDirectory.set(File(System.getenv("LOCALAPPDATA"), "iCloudCalendar/build"))
 
 group = "icloudcal"
-version = "3.1.0"
+version = "3.2.0"
 
 repositories {
     mavenCentral()
@@ -32,7 +32,21 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-val jvmOptions = listOf("-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED")
+// 트레이에 상주하는 작은 창이라 Java 힙(실사용 20MB 안팎)보다 GPU 렌더링(D3D), G1 GC, C2 컴파일러가 쓰는
+// 네이티브 메모리가 훨씬 크다. 소프트웨어 렌더링 + SerialGC + C1 만 쓰면 개인 메모리가 약 400MB → 100MB 로 준다.
+// -Xms 를 주지 않으면 초기 힙이 RAM 의 1/64 로 잡혀 -Xmx 전체를 처음부터 확보하므로 꼭 함께 준다.
+val jvmOptions = listOf(
+    "-Dfile.encoding=UTF-8", "--enable-native-access=ALL-UNNAMED",
+    "-Xms16m", "-Xmx128m", "-XX:+UseSerialGC", "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=30",
+    "-XX:TieredStopAtLevel=1", "-XX:ReservedCodeCacheSize=32m", "-Xss512k",
+    "-Dprism.order=sw", "-Dsun.java2d.d3d=false",
+)
+
+// exe 에 넣을 Java 모듈: jdeps 결과 + 한국어 날짜 형식(jdk.localedata), 한글 Windows 인코딩 MS949(jdk.charsets)
+val runtimeModules = listOf(
+    "java.base", "java.desktop", "java.logging", "java.net.http", "java.sql", "java.xml",
+    "jdk.charsets", "jdk.jfr", "jdk.localedata", "jdk.unsupported",
+)
 
 application {
     mainClass.set("icloudcal.Launcher")
@@ -66,6 +80,9 @@ tasks.register<Exec>("packageApp") {
             "--input", lib.path,
             "--main-jar", "${project.name}-$version.jar",
             "--main-class", "icloudcal.Launcher",
+            "--add-modules", runtimeModules.joinToString(","),
+            "--jlink-options",
+            "--strip-debug --strip-native-commands --no-man-pages --no-header-files --compress=zip-6 --include-locales=en,ko",
             "--dest", out.path,
         ) + jvmOptions.flatMap { listOf("--java-options", it) }
     )
