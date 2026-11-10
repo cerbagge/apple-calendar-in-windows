@@ -6,11 +6,13 @@ import javafx.application.Platform;
 import javafx.geometry.Point2D;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.input.InputMethodRequests;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
+import javafx.scene.robot.Robot;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -21,8 +23,6 @@ import java.awt.BasicStroke;
 import java.awt.EventQueue;
 import java.awt.Font;
 import java.awt.Graphics2D;
-import java.awt.MenuItem;
-import java.awt.PopupMenu;
 import java.awt.RenderingHints;
 import java.awt.SystemTray;
 import java.awt.TrayIcon;
@@ -85,8 +85,9 @@ public final class App extends Application {
     private StackPane root;
     private CalendarPane calendarPane;
     private TrayIcon trayIcon;
+    private TrayMenu trayMenu;
     private LocalDate trayDate;
-    private CalDavClient client;
+    private AccountSet accounts;
     private List<CalendarInfo> calendars = List.of();
     private long lastHiddenAt;
     private Animation windowAnimation;
@@ -112,7 +113,8 @@ public final class App extends Application {
         popup.setTitle("iCloud 캘린더");
 
         root = new StackPane();
-        root.getStyleClass().addAll("window", WindowsApi.appsDark() ? "dark" : "light");
+        root.getStyleClass().add("window");
+        applyTheme(root);
         Scene scene = new Scene(root, WIDTH, HEIGHT, Color.TRANSPARENT);
         scene.getStylesheets().add(App.class.getResource("style.css").toExternalForm());
         scene.setOnKeyPressed(e -> {
@@ -130,24 +132,34 @@ public final class App extends Application {
             }
         });
 
-        calendarPane = new CalendarPane(this::loadMonth, this::openAddForm, this::openEditForm);
+        calendarPane = new CalendarPane(this::loadMonth, this::openAddForm, this::openEditForm, this::refresh);
+        trayMenu = new TrayMenu(owner, scene.getStylesheets().get(0), List.of(
+                new TrayMenu.Item("", "달력 열기", this::show),
+                new TrayMenu.Item("", "동기화", this::refresh),
+                new TrayMenu.Item("", "계정 관리", () -> {
+                    openAccounts();
+                    show();
+                }),
+                TrayMenu.SEPARATOR,
+                new TrayMenu.Item("", "종료", this::exit)));
         installTray();
         if (!WindowsApi.registerHotkey('C', () -> Platform.runLater(this::toggle))) {
             calendarPane.setStatus("Win + Alt + C 단축키를 다른 프로그램이 쓰고 있습니다.");
         }
         worker.scheduleAtFixedRate(() -> Platform.runLater(this::refresh), 10, 10, TimeUnit.MINUTES);
 
-        CredentialStore.load().ifPresentOrElse(account -> {
+        List<CredentialStore.Account> saved = CredentialStore.loadAll();
+        if (saved.isEmpty()) {
+            showLogin(null);
+            show();
+        } else {
             showPane(calendarPane);
-            connect(account, false).whenCompleteAsync((ok, ex) -> {
+            connect(saved).whenCompleteAsync((ok, ex) -> {
                 if (ex != null) {
                     connectFailed(ex);
                 }
             }, Platform::runLater);
-        }, () -> {
-            showLogin(null);
-            show();
-        });
+        }
     }
 
     /** 사용자에게 보여줄 오류 문장 */
@@ -167,6 +179,26 @@ public final class App extends Application {
         return cause.getMessage() == null ? cause.toString() : cause.getMessage();
     }
 
+    /**
+     * Windows 의 다크/라이트 모드와 강조 색을 node(.window)에 입힌다. 설정을 바꾸면 따라가도록 창을 띄울 때마다 부른다.
+     * 강조 색 위의 글자는 강조 색이 밝으면 검정, 어두우면 흰색으로 한다.
+     */
+    static void applyTheme(Parent node) {
+        boolean dark = WindowsApi.appsDark();
+        node.getStyleClass().removeAll("dark", "light");
+        node.getStyleClass().add(dark ? "dark" : "light");
+        String accent = WindowsApi.accentColor(dark);
+        if (accent == null) {
+            node.setStyle("");
+            return;
+        }
+        Color color = Color.web(accent);
+        double luminance = 0.2126 * color.getRed() + 0.7152 * color.getGreen() + 0.0722 * color.getBlue();
+        String onAccent = luminance > 0.55 ? "#000000" : "#ffffff";
+        node.setStyle("-c-accent: %1$s; -c-accent-fg: %2$s; -fx-accent: %1$s; -fx-focus-color: %1$s;"
+                .formatted(accent, onAccent));
+    }
+
     // ---- 창 ----
 
     private void toggle() {
@@ -182,6 +214,7 @@ public final class App extends Application {
         Rectangle2D area = Screen.getPrimary().getVisualBounds();
         popup.setX(area.getMaxX() - WIDTH - MARGIN);
         popup.setY(area.getMaxY() - HEIGHT - MARGIN);
+        applyTheme(root);
         calendarPane.render();
         closing = false;
         if (windowAnimation != null) {
@@ -193,6 +226,7 @@ public final class App extends Application {
         popup.toFront();
         popup.requestFocus();
         windowAnimation = Motion.enter(root, OPEN_SLIDE, OPEN_MILLIS);
+        reloadCalendars();
     }
 
     private void hide() {
@@ -232,29 +266,98 @@ public final class App extends Application {
                 (int) Math.round((caret.getY() - popup.getY()) * popup.getOutputScaleY())};
     }
 
+    /** 계정이 하나도 없을 때 첫 계정을 받는 화면 */
     private void showLogin(String message) {
-        showPane(new LoginPane(message,
-                (id, pw) -> connect(new CredentialStore.Account(id, pw), true),
+        showPane(new LoginPane(false, message,
+                (id, pw) -> addAccount(id, pw).thenRunAsync(() -> showPane(calendarPane), Platform::runLater),
                 () -> getHostServices().showDocument("https://account.apple.com/"),
                 this::exit));
     }
 
+    private void openAccounts() {
+        List<AccountsPane.Row> rows = new ArrayList<>();
+        List<String> ids = accounts == null ? List.of() : accounts.appleIds();
+        Map<String, IOException> failed = accounts == null ? Map.of() : accounts.failures();
+        for (String id : ids) {
+            long count = calendars.stream().filter(c -> id.equals(c.account())).count();
+            IOException error = failed.get(id);
+            rows.add(new AccountsPane.Row(id, error == null ? "캘린더 " + count + "개" : "연결 실패: " + message(error),
+                    error == null));
+        }
+        showPane(new AccountsPane(rows,
+                () -> showPane(new LoginPane(true, null,
+                        (id, pw) -> addAccount(id, pw).thenRunAsync(this::openAccounts, Platform::runLater),
+                        () -> getHostServices().showDocument("https://account.apple.com/"),
+                        this::openAccounts)),
+                this::removeAccount,
+                () -> showPane(calendarPane)));
+    }
+
     // ---- iCloud ----
 
-    private CompletableFuture<Void> connect(CredentialStore.Account account, boolean remember) {
-        CalDavClient candidate = new CalDavClient(account.appleId(), account.password());
-        return async(() -> {
-            List<CalendarInfo> list = candidate.listCalendars();
-            if (remember) {
-                CredentialStore.save(account);
-            }
-            return list;
-        }).thenAcceptAsync(list -> {
-            client = candidate;
+    /** 저장된 계정들로 연결해 캘린더 목록을 받고 일정을 불러온다. 화면 전환은 부른 쪽이 한다. */
+    private CompletableFuture<Void> connect(List<CredentialStore.Account> saved) {
+        AccountSet candidate = AccountSet.of(saved);
+        return async(candidate::listCalendars).thenAcceptAsync(list -> {
+            accounts = candidate;
             calendars = list;
             clearCache();
-            calendarPane.setStatus("");
-            showPane(calendarPane);
+            calendarPane.setStatus(failureText(candidate));
+            loadMonth(calendarPane.month());
+        }, Platform::runLater);
+    }
+
+    /** 새 계정을 확인한 뒤 저장 목록에 더하고(같은 Apple ID 면 앱 암호를 바꾼다) 모든 계정으로 다시 연결한다. */
+    private CompletableFuture<Void> addAccount(String appleId, String password) {
+        CalDavClient probe = new CalDavClient(appleId, password);
+        return async(() -> {
+            probe.listCalendars();
+            List<CredentialStore.Account> saved = new ArrayList<>(CredentialStore.loadAll());
+            saved.removeIf(a -> a.appleId().equalsIgnoreCase(appleId));
+            saved.add(new CredentialStore.Account(appleId, password));
+            CredentialStore.saveAll(saved);
+            return saved;
+        }).thenCompose(this::connect);
+    }
+
+    /** 계정을 이 PC 에서만 지운다(iCloud 의 일정은 그대로). 마지막 계정이면 첫 계정 입력 화면으로 간다. */
+    private CompletableFuture<Void> removeAccount(String appleId) {
+        return async(() -> {
+            List<CredentialStore.Account> saved = new ArrayList<>(CredentialStore.loadAll());
+            saved.removeIf(a -> a.appleId().equalsIgnoreCase(appleId));
+            CredentialStore.saveAll(saved);
+            return saved;
+        }).thenComposeAsync(saved -> {
+            if (saved.isEmpty()) {
+                accounts = null;
+                calendars = List.of();
+                clearCache();
+                showLogin(null);
+                return CompletableFuture.<Void>completedFuture(null);
+            }
+            return connect(saved).thenRunAsync(this::openAccounts, Platform::runLater);
+        }, Platform::runLater);
+    }
+
+    private static String failureText(AccountSet set) {
+        if (set.failures().isEmpty()) {
+            return "";
+        }
+        return "연결하지 못한 계정: " + String.join(", ", set.failures().keySet()) + " (트레이 메뉴 → 계정 관리)";
+    }
+
+    /** 캘린더 목록을 다시 받아, 앱이 켜진 뒤 iCloud 에서 추가·삭제·이름 변경한 캘린더가 바뀌었으면 일정도 다시 불러온다. */
+    private void reloadCalendars() {
+        AccountSet current = accounts;
+        if (current == null) {
+            return;
+        }
+        async(current::listCalendars).whenCompleteAsync((list, ex) -> {
+            if (ex != null || current != accounts || list.equals(calendars)) {
+                return;
+            }
+            calendars = list;
+            clearCache();
             loadMonth(calendarPane.month());
         }, Platform::runLater);
     }
@@ -268,23 +371,26 @@ public final class App extends Application {
         }
     }
 
-    /** month 를 보여 주고, 앞뒤 한 달도 미리 받아 둔다. 이미 받았거나 받는 중인 달은 건너뛴다. */
-    private void loadMonth(YearMonth month) {
+    /**
+     * month 를 보여 주고, 앞뒤 한 달도 미리 받아 둔다. 이미 받았거나 받는 중인 달은 건너뛴다.
+     * 받기가 끝나면(실패해도) 완료되는 future 를 돌려준다.
+     */
+    private CompletableFuture<Void> loadMonth(YearMonth month) {
         List<EventItem> cached = cache.get(month);
         if (cached != null) {
             calendarPane.setEvents(month, cached);
         }
-        if (client == null) {
-            return;
+        if (accounts == null) {
+            return CompletableFuture.completedFuture(null);
         }
         List<YearMonth> missing = Stream.of(month.minusMonths(1), month, month.plusMonths(1))
                 .filter(m -> !cache.containsKey(m) && !loading.contains(m))
                 .toList();
         if (missing.isEmpty()) {
-            return;
+            return CompletableFuture.completedFuture(null);
         }
         loading.addAll(missing);
-        CalDavClient current = client;
+        AccountSet current = accounts;
         List<CalendarInfo> targets = calendars;
         int generation = cacheGeneration;
         // 빠진 달들의 6주 달력을 모두 덮는 구간을 한 번에 받는다
@@ -293,7 +399,7 @@ public final class App extends Application {
         if (cached == null) {
             calendarPane.setStatus("불러오는 중…");
         }
-        async(() -> {
+        return async(() -> {
             List<EventItem> all = new ArrayList<>();
             for (CalendarInfo calendar : targets) {
                 all.addAll(current.fetchEvents(calendar, from, to));
@@ -323,7 +429,7 @@ public final class App extends Application {
             if (cache.containsKey(calendarPane.month())) {
                 calendarPane.setStatus("");
             }
-        }, Platform::runLater);
+        }, Platform::runLater).handle((list, ex) -> null);
     }
 
     private static ZonedDateTime gridFrom(YearMonth month) {
@@ -342,7 +448,7 @@ public final class App extends Application {
             calendarPane.setStatus("일정을 추가할 수 있는 캘린더가 없습니다.");
             return;
         }
-        CalDavClient current = client;
+        AccountSet current = accounts;
         showPane(new EventFormPane(writable, date, null, event -> saveEvent(() -> {
             current.putEvent(event);
             return null;
@@ -354,7 +460,7 @@ public final class App extends Application {
             calendarPane.setStatus("'" + original.calendar().name() + "' 캘린더의 일정은 수정할 수 없습니다.");
             return;
         }
-        CalDavClient current = client;
+        AccountSet current = accounts;
         showPane(new EventFormPane(writableCalendars(), original.start().toLocalDate(), original,
                 event -> saveEvent(() -> {
                     current.updateEvent(original, event);
@@ -381,33 +487,39 @@ public final class App extends Application {
         }, Platform::runLater);
     }
 
+    /** 캘린더 목록과 일정을 모두 다시 받는다. 동기화 버튼, 트레이 메뉴, 10분 주기에서 부른다. */
     private void refresh() {
         updateTrayIcon();
-        if (client == null) {
-            CredentialStore.load().ifPresent(account -> connect(account, false)
-                    .whenCompleteAsync((ok, ex) -> {
-                        if (ex != null) {
-                            connectFailed(ex);
-                        }
-                    }, Platform::runLater));
-            return;
-        }
-        clearCache();
-        calendarPane.render();
-        loadMonth(calendarPane.month());
+        calendarPane.setSyncing(true);
+        sync().whenCompleteAsync((ok, ex) -> calendarPane.setSyncing(false), Platform::runLater);
     }
 
-    private void logout() {
-        try {
-            CredentialStore.clear();
-        } catch (IOException e) {
-            calendarPane.setStatus("저장된 계정을 지우지 못했습니다: " + e.getMessage());
+    private CompletableFuture<Void> sync() {
+        if (accounts == null) {
+            List<CredentialStore.Account> saved = CredentialStore.loadAll();
+            if (saved.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return connect(saved).whenCompleteAsync((ok, ex) -> {
+                if (ex != null) {
+                    connectFailed(ex);
+                }
+            }, Platform::runLater);
         }
-        client = null;
-        calendars = List.of();
-        clearCache();
-        showLogin(null);
-        show();
+        // 캘린더 목록부터 다시 받는다. 목록을 못 받으면 기존 목록으로 일정만 다시 불러온다.
+        AccountSet current = accounts;
+        return async(current::listCalendars).handleAsync((list, ex) -> {
+            if (current != accounts) {
+                return CompletableFuture.<Void>completedFuture(null);
+            }
+            if (ex == null) {
+                calendars = list;
+                calendarPane.setStatus(failureText(current));
+            }
+            clearCache();
+            calendarPane.render();
+            return loadMonth(calendarPane.month());
+        }, Platform::runLater).thenCompose(f -> f);
     }
 
     private <T> CompletableFuture<T> async(IoTask<T> task) {
@@ -437,21 +549,19 @@ public final class App extends Application {
         trayDate = LocalDate.now();
         boolean darkTaskbar = WindowsApi.taskbarDark();
         EventQueue.invokeLater(() -> {
-            PopupMenu menu = new PopupMenu();
-            menu.setFont(new Font("Malgun Gothic", Font.PLAIN, 12));
-            menu.add(menuItem("열기", () -> Platform.runLater(this::show)));
-            menu.add(menuItem("새로 고침", () -> Platform.runLater(this::refresh)));
-            menu.add(menuItem("계정 변경", () -> Platform.runLater(this::logout)));
-            menu.addSeparator();
-            menu.add(menuItem("종료", () -> Platform.runLater(this::exit)));
-
-            trayIcon = new TrayIcon(trayImage(trayDate, darkTaskbar), "iCloud 캘린더 (Win + Alt + C)", menu);
+            trayIcon = new TrayIcon(trayImage(trayDate, darkTaskbar), "iCloud 캘린더 (Win + Alt + C)");
             trayIcon.setImageAutoSize(true);
             trayIcon.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
                     if (e.getButton() == MouseEvent.BUTTON1) {
                         Platform.runLater(App.this::toggle);
+                    } else if (e.getButton() == MouseEvent.BUTTON3) {
+                        // AWT 좌표는 화면 배율 처리가 JavaFX 와 다를 수 있어 JavaFX 에서 마우스 위치를 다시 읽는다
+                        Platform.runLater(() -> {
+                            Robot robot = new Robot();
+                            trayMenu.show(robot.getMouseX(), robot.getMouseY());
+                        });
                     }
                 }
             });
@@ -472,12 +582,6 @@ public final class App extends Application {
         trayDate = now;
         boolean darkTaskbar = WindowsApi.taskbarDark();
         EventQueue.invokeLater(() -> trayIcon.setImage(trayImage(now, darkTaskbar)));
-    }
-
-    private static MenuItem menuItem(String label, Runnable action) {
-        MenuItem item = new MenuItem(label);
-        item.addActionListener(e -> action.run());
-        return item;
     }
 
     /** 달력 모양 테두리 안에 오늘 날짜 숫자를 그린 아이콘 */

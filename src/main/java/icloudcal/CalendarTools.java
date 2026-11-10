@@ -83,6 +83,7 @@ final class CalendarTools {
         for (CalendarInfo calendar : backend().listCalendars()) {
             ObjectNode item = out.addObject();
             item.put("name", calendar.name());
+            item.put("account", calendar.account());
             item.put("writable", calendar.writable());
             item.put("color", calendar.color());
         }

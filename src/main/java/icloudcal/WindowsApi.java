@@ -62,6 +62,24 @@ final class WindowsApi {
         return themeValue("SystemUsesLightTheme") == 0;
     }
 
+    /**
+     * Windows 강조 색. AccentPalette 에는 밝은 순서로 8단계가 들어 있고, Windows 11 은 다크 모드에서 두 번째로 밝은 색,
+     * 라이트 모드에서 기본보다 한 단계 어두운 색을 쓴다. 읽지 못하면 null.
+     */
+    static String accentColor(boolean dark) {
+        try {
+            byte[] palette = Advapi32Util.registryGetBinaryValue(WinReg.HKEY_CURRENT_USER,
+                    "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent", "AccentPalette");
+            int i = (dark ? 1 : 4) * 4;
+            if (palette == null || palette.length < i + 3) {
+                return null;
+            }
+            return String.format("#%02x%02x%02x", palette[i] & 0xff, palette[i + 1] & 0xff, palette[i + 2] & 0xff);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private static int themeValue(String name) {
         try {
             return Advapi32Util.registryGetIntValue(WinReg.HKEY_CURRENT_USER, THEME_KEY, name);

@@ -49,12 +49,18 @@ final class CalDavClient implements CalendarBackend {
             .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(15))
             .build();
+    private final String appleId;
     private final String authorization;
     private URI home;
 
     CalDavClient(String appleId, String appPassword) {
+        this.appleId = appleId;
         String token = appleId + ":" + appPassword;
         authorization = "Basic " + Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
+    }
+
+    String appleId() {
+        return appleId;
     }
 
     /** 일정을 담을 수 있는 캘린더 목록. 처음 호출할 때 계정 확인도 겸한다. */
@@ -70,7 +76,7 @@ final class CalDavClient implements CalendarBackend {
                     <c:supported-calendar-component-set/><d:current-user-privilege-set/>
                   </d:prop>
                 </d:propfind>""");
-        return parseCalendars(doc, home);
+        return parseCalendars(doc, home).stream().map(c -> c.withAccount(appleId)).toList();
     }
 
     @Override

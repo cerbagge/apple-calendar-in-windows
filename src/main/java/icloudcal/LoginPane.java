@@ -15,14 +15,14 @@ import javafx.scene.layout.VBox;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 
-/** Apple ID 와 앱 암호 입력 화면 */
+/** Apple ID 와 앱 암호 입력 화면. adding 이면 이미 연결된 계정 옆에 하나 더 추가하는 화면이다. */
 final class LoginPane extends VBox {
 
-    LoginPane(String message, BiFunction<String, String, CompletableFuture<Void>> onConnect,
-              Runnable openAppleAccount, Runnable onQuit) {
+    LoginPane(boolean adding, String message, BiFunction<String, String, CompletableFuture<Void>> onConnect,
+              Runnable openAppleAccount, Runnable onLeave) {
         getStyleClass().add("form-pane");
 
-        Label heading = new Label("iCloud 캘린더 연결");
+        Label heading = new Label(adding ? "계정 추가" : "iCloud 캘린더 연결");
         heading.getStyleClass().add("form-title");
 
         Label guide = new Label("Apple 계정 비밀번호가 아니라 앱 암호를 입력하십시오. "
@@ -45,9 +45,10 @@ final class LoginPane extends VBox {
         note.setWrapText(true);
         note.getStyleClass().add("hint");
 
-        Button quit = new Button("종료");
+        Button quit = new Button(adding ? "취소" : "종료");
         quit.getStyleClass().add("plain-button");
-        quit.setOnAction(e -> onQuit.run());
+        quit.setCancelButton(adding);
+        quit.setOnAction(e -> onLeave.run());
         Button connect = new Button("연결");
         connect.getStyleClass().add("accent-button");
         connect.setDefaultButton(true);

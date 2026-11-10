@@ -1,12 +1,15 @@
 package icloudcal;
 
 import javafx.animation.Animation;
+import javafx.animation.Interpolator;
+import javafx.animation.RotateTransition;
 import javafx.event.EventHandler;
 import javafx.geometry.HPos;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
@@ -17,6 +20,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.Font;
+import javafx.util.Duration;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -41,6 +46,9 @@ final class CalendarPane extends VBox {
     /** 달을 넘길 때 날짜 칸이 미끄러져 들어오는 거리와 시간 */
     private static final double MONTH_SLIDE = 36;
     private static final double MONTH_MILLIS = 260;
+    /** Windows 11 은 Segoe Fluent Icons, Windows 10 은 Segoe MDL2 Assets 에 같은 아이콘이 있다 */
+    private static final String ICON_FONT = Font.getFamilies().contains("Segoe Fluent Icons")
+            ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
 
     private final Consumer<YearMonth> onMonthChange;
     private final Consumer<EventItem> onEdit;
@@ -51,6 +59,8 @@ final class CalendarPane extends VBox {
     private final Label dayTitle = new Label();
     private final VBox eventList = new VBox(2);
     private final Label status = new Label();
+    private final Button sync = new Button();
+    private final RotateTransition syncSpin;
 
     private YearMonth month = YearMonth.now();
     private LocalDate selected = LocalDate.now();
@@ -58,14 +68,29 @@ final class CalendarPane extends VBox {
     private double wheelDelta;
     private Animation monthAnimation;
 
-    CalendarPane(Consumer<YearMonth> onMonthChange, Consumer<LocalDate> onAdd, Consumer<EventItem> onEdit) {
+    CalendarPane(Consumer<YearMonth> onMonthChange, Consumer<LocalDate> onAdd, Consumer<EventItem> onEdit,
+                 Runnable onSync) {
         this.onMonthChange = onMonthChange;
         this.onEdit = onEdit;
         getStyleClass().add("calendar-pane");
 
-        today.getStyleClass().add("today-header");
-        today.setMaxWidth(Double.MAX_VALUE);
+        today.getStyleClass().add("today-text");
         today.setOnMouseClicked(e -> select(LocalDate.now()));
+
+        // Windows 아이콘 글꼴의 새로 고침 모양. 동기화하는 동안 돌아간다.
+        Label syncIcon = new Label("");
+        syncIcon.setStyle("-fx-font-family: '" + ICON_FONT + "';");
+        syncSpin = new RotateTransition(Duration.seconds(1), syncIcon);
+        syncSpin.setByAngle(360);
+        syncSpin.setCycleCount(Animation.INDEFINITE);
+        syncSpin.setInterpolator(Interpolator.LINEAR);
+        sync.setGraphic(syncIcon);
+        sync.getStyleClass().add("sync-button");
+        sync.setTooltip(new Tooltip("동기화 (캘린더와 일정 다시 받기)"));
+        sync.setOnAction(e -> onSync.run());
+        HBox header = new HBox(today, spacer(), sync);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.getStyleClass().add("today-header");
 
         monthLabel.getStyleClass().add("month-label");
         HBox nav = new HBox(2, monthLabel, spacer(), navButton("▲", -1), navButton("▼", 1));
@@ -119,7 +144,7 @@ final class CalendarPane extends VBox {
         status.getStyleClass().add("status");
         status.setMaxWidth(Double.MAX_VALUE);
 
-        getChildren().addAll(today, nav, weekdays, gridBox, dayBar, scroll, status);
+        getChildren().addAll(header, nav, weekdays, gridBox, dayBar, scroll, status);
         render();
     }
 
@@ -142,6 +167,17 @@ final class CalendarPane extends VBox {
 
     void setStatus(String text) {
         status.setText(text);
+    }
+
+    /** 동기화하는 동안 버튼을 막고 아이콘을 돌린다. */
+    void setSyncing(boolean syncing) {
+        sync.setDisable(syncing);
+        if (syncing) {
+            syncSpin.play();
+        } else {
+            syncSpin.stop();
+            syncSpin.getNode().setRotate(0);
+        }
     }
 
     void select(LocalDate day) {

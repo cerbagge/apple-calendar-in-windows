@@ -90,8 +90,10 @@ final class EventFormPane extends StackPane {
         notes.setPrefRowCount(4);
 
         ComboBox<CalendarInfo> calendar = new ComboBox<>(FXCollections.observableArrayList(calendars));
-        calendar.setCellFactory(list -> calendarCell());
-        calendar.setButtonCell(calendarCell());
+        // 계정이 둘 이상이면 펼친 목록에서 캘린더마다 어느 계정인지도 보여 준다
+        boolean manyAccounts = calendars.stream().map(CalendarInfo::account).distinct().count() > 1;
+        calendar.setCellFactory(list -> calendarCell(manyAccounts));
+        calendar.setButtonCell(calendarCell(false));
         calendar.setPrefWidth(180);
         if (editing == null) {
             calendar.getSelectionModel().selectFirst();
@@ -312,7 +314,7 @@ final class EventFormPane extends StackPane {
         return box;
     }
 
-    private static ListCell<CalendarInfo> calendarCell() {
+    private static ListCell<CalendarInfo> calendarCell(boolean showAccount) {
         return new ListCell<>() {
             @Override
             protected void updateItem(CalendarInfo item, boolean empty) {
@@ -322,8 +324,20 @@ final class EventFormPane extends StackPane {
                     setGraphic(null);
                     return;
                 }
+                Circle dot = new Circle(4, Color.web(item.color() == null ? CalendarPane.DEFAULT_COLOR : item.color()));
+                if (showAccount && item.account() != null) {
+                    Label name = new Label(item.name());
+                    name.textFillProperty().bind(textFillProperty());
+                    Label account = new Label(item.account());
+                    account.getStyleClass().add("calendar-account");
+                    HBox graphic = new HBox(8, dot, new VBox(name, account));
+                    graphic.setAlignment(Pos.CENTER_LEFT);
+                    setText(null);
+                    setGraphic(graphic);
+                    return;
+                }
                 setText(item.name());
-                setGraphic(new Circle(4, Color.web(item.color() == null ? CalendarPane.DEFAULT_COLOR : item.color())));
+                setGraphic(dot);
                 setGraphicTextGap(8);
             }
         };

@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
+import java.util.List;
 
 /**
  * Claude 가 iCloud 캘린더를 다룰 수 있게 하는 MCP 서버 (stdio, 한 줄에 JSON-RPC 메시지 하나).
@@ -20,7 +21,7 @@ import java.time.ZoneId;
  */
 public final class McpServer {
     static final String PROTOCOL_VERSION = "2025-06-18";
-    static final String VERSION = "3.2.0";
+    static final String VERSION = "4.0.0";
 
     private final ObjectMapper json = new ObjectMapper();
     private final CalendarTools tools;
@@ -31,9 +32,11 @@ public final class McpServer {
 
     public static void main(String[] args) throws IOException {
         CalendarTools tools = new CalendarTools(() -> {
-            CredentialStore.Account account = CredentialStore.load().orElseThrow(() ->
-                    new IllegalStateException("저장된 iCloud 계정이 없습니다. 달력 앱을 실행해 계정을 먼저 연결하십시오."));
-            return new CalDavClient(account.appleId(), account.password());
+            List<CredentialStore.Account> accounts = CredentialStore.loadAll();
+            if (accounts.isEmpty()) {
+                throw new IllegalStateException("저장된 iCloud 계정이 없습니다. 달력 앱을 실행해 계정을 먼저 연결하십시오.");
+            }
+            return AccountSet.of(accounts);
         }, ZoneId.systemDefault());
         new McpServer(tools).serve(System.in, System.out);
     }

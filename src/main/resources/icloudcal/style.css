@@ -71,10 +71,88 @@
 
 .today-header {
     -fx-font-size: 15px;
-    -fx-padding: 18 20 18 20;
+    -fx-padding: 12 12 12 20;
     -fx-background-color: -c-header;
     -fx-background-radius: 8 8 0 0;
+}
+
+.today-text {
     -fx-cursor: hand;
+}
+
+/* ---- 트레이 메뉴 (Windows 11 우클릭 메뉴 모양) ---- */
+
+.tray-menu {
+    -fx-padding: 4;
+    -fx-min-width: 200;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 12, 0, 0, 3);
+}
+
+.menu-item {
+    -fx-padding: 8 14 8 12;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+
+.menu-item:hover {
+    -fx-background-color: -c-hover;
+}
+
+.menu-icon {
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 14px;
+    -fx-min-width: 18;
+    -fx-alignment: center;
+}
+
+.menu-item:hover .menu-icon {
+    -fx-text-fill: -c-accent;
+}
+
+/* 위아래 4, 좌우 6 만큼 안쪽에 1픽셀 선을 그린다 */
+.menu-separator {
+    -fx-background-color: -c-divider;
+    -fx-background-insets: 4 6 4 6;
+    -fx-min-height: 9;
+    -fx-pref-height: 9;
+    -fx-max-height: 9;
+}
+
+/* ---- 계정 화면 ---- */
+
+.account-icon {
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 18px;
+}
+
+.calendar-account {
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 11px;
+}
+
+.sync-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 7 8 7 8;
+    -fx-cursor: hand;
+}
+
+.sync-button .label {
+    -fx-text-fill: -c-dim;
+    -fx-font-size: 15px;
+}
+
+.sync-button:hover {
+    -fx-background-color: -c-hover;
+}
+
+.sync-button:hover .label {
+    -fx-text-fill: -c-fg;
+}
+
+/* 동기화 중에도 흐려지지 않고 아이콘이 도는 모습이 보이게 한다 */
+.sync-button:disabled {
+    -fx-opacity: 1;
 }
 
 .month-nav {
